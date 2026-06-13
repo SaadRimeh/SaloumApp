@@ -98,8 +98,13 @@ export default function HomeScreen() {
         
         if (token) {
           try {
-            await api.updatePushToken(user.id, token);
-            console.log('تم إرسال التوكن للباك إند بنجاح!');
+            const authToken = await getToken();
+            if (authToken) {
+              await api.updatePushToken(authToken, user.id, token);
+              console.log('تم إرسال التوكن للباك إند بنجاح!');
+            } else {
+              console.warn('لم يتم العثور على توكن تسجيل الدخول لإرسال توكن الإشعارات');
+            }
           } catch (error) {
             console.error('خطأ في إرسال التوكن:', error);
           }
@@ -609,10 +614,14 @@ async function registerForPushNotificationsAsync() {
       return null;
     }
     
-    // استخراج التوكن باستخدام الـ projectId الخاص بمشروعك
-    const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
-    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
-    token = tokenData.data;
+    try {
+      // استخراج التوكن باستخدام الـ projectId الخاص بمشروعك
+      const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+      const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+      token = tokenData.data;
+    } catch (err: any) {
+      console.warn('فشل في جلب توكن الإشعارات من خوادم Expo:', err.message);
+    }
     
   } else {
     console.log('يجب استخدام هاتف حقيقي لتجربة الإشعارات');

@@ -11,7 +11,7 @@ import {
 import { useAuth } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { api, Schedule, AvailableSlot } from '../utils/api';
+import { api, AvailableSlot } from '../utils/api';
 import { useAppContext } from '../utils/ThemeContext';
 
 interface DayItem {
@@ -32,7 +32,7 @@ export default function BookScreen() {
   const [selectedTime, setSelectedTime] = useState<string>('');
   const duration = 60; // Default 60 mins
   const [loading, setLoading] = useState(false);
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [schedules, setSchedules] = useState<AvailableSlot[]>([]);
   const [schedulesLoading, setSchedulesLoading] = useState(true);
   const [schedulesError, setSchedulesError] = useState<string | null>(null);
 
@@ -89,8 +89,14 @@ export default function BookScreen() {
     for (let i = 0; i < 7; i++) {
       const d = new Date();
       d.setDate(d.getDate() + i);
+
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const dateString = `${year}-${month}-${day}`;
+
       nextDays.push({
-        dateString: d.toISOString().split('T')[0],
+        dateString,
         dayName: dayNames[d.getDay()],
         dayNum: d.getDate(),
         monthName: months[d.getMonth()],
@@ -107,11 +113,17 @@ export default function BookScreen() {
     try {
       const token = await getToken();
       if (token) {
-        const data = await api.getAvailableSlots(token, weekDate);
+        const queryDate = weekDate ?? selectedDate?.dateString ?? new Date().toISOString().split('T')[0];
+        console.log('[fetchSchedules] Querying slots for date:', queryDate);
+        const data = await api.getAvailableSlots(token, queryDate);
+        console.log('[fetchSchedules] Received schedules count:', data?.length);
+        console.log('[fetchSchedules] Raw first schedule object:', JSON.stringify(data?.[0], null, 2));
+        console.log('[fetchSchedules] Schedules data detail:', JSON.stringify(data?.map(s => ({ start: s.start, end: s.end })), null, 2));
         setSchedules(data);
       }
     } catch (err: any) {
       console.warn('Schedules endpoint failed:', err.message);
+      console.log('[fetchSchedules] Detailed error:', err);
       setSchedulesError(t.loadError);
     } finally {
       setSchedulesLoading(false);
@@ -120,12 +132,14 @@ export default function BookScreen() {
 
   useEffect(() => {
     generateNext7Days();
-    if (isSignedIn) {
-      fetchSchedules();
-    } else {
-      setSchedulesLoading(false);
+    if (isLoaded) {
+      if (isSignedIn) {
+        fetchSchedules();
+      } else {
+        setSchedulesLoading(false);
+      }
     }
-  }, [isSignedIn, isArabic]);
+  }, [isLoaded, isSignedIn, isArabic]);
 
   // When user picks a date in a different week, re-fetch slots for that week
   const handleDateSelect = (item: DayItem) => {
@@ -139,22 +153,55 @@ export default function BookScreen() {
   // Get backend slots for the currently selected day, if any
   const getSlotsForSelectedDate = (): { time: string; label: string }[] | null => {
     if (!selectedDate || schedules.length === 0) return null;
-    const daySchedule = schedules.find(s => s.date === selectedDate.dateString);
-    if (!daySchedule || !daySchedule.slots || daySchedule.slots.length === 0) return null;
-    return daySchedule.slots.map((slot: AvailableSlot) => {
+    console.log('[getSlotsForSelectedDate] selectedDate.dateString is:', selectedDate.dateString);
+    
+    // Filter slots starting on the selected date in UTC time
+    const daySlots = schedules.filter(slot => {
+      if (!slot.start) return false;
+      const dateObj = new Date(slot.start);
+      const year = dateObj.getUTCFullYear();
+      const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(dateObj.getUTCDate()).padStart(2, '0');
+      const localSlotDate = `${year}-${month}-${day}`;
+      console.log('Comparing slot.start:', slot.start, '-> UTCDateString:', localSlotDate, 'with selectedDate:', selectedDate.dateString);
+      return localSlotDate === selectedDate.dateString;
+    });
+
+    console.log('[getSlotsForSelectedDate] Found matching slots count:', daySlots.length);
+    if (daySlots.length === 0) return null;
+
+    // Sort slots chronologically
+    const sortedSlots = [...daySlots].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+
+    return sortedSlots.map((slot: AvailableSlot) => {
       const date = new Date(slot.start);
-      let h = date.getHours();
-      const m = date.getMinutes().toString().padStart(2, '0');
+      let h = date.getUTCHours();
+      const m = date.getUTCMinutes().toString().padStart(2, '0');
       const ampm = h >= 12 ? (isArabic ? 'م' : 'PM') : (isArabic ? 'ص' : 'AM');
       h = h % 12 || 12;
       return {
-        time: `${date.getHours().toString().padStart(2, '0')}:${m}`,
+        time: slot.start,
         label: `${h}:${m} ${ampm}`,
       };
     });
   };
 
   const activeSlots = getSlotsForSelectedDate() ?? [];
+
+  const formatTimeLabel = (isoString: string) => {
+    if (!isoString) return '';
+    try {
+      const date = new Date(isoString);
+      if (isNaN(date.getTime())) return isoString;
+      let h = date.getUTCHours();
+      const m = date.getUTCMinutes().toString().padStart(2, '0');
+      const ampm = h >= 12 ? (isArabic ? 'م' : 'PM') : (isArabic ? 'ص' : 'AM');
+      h = h % 12 || 12;
+      return `${h}:${m} ${ampm}`;
+    } catch {
+      return isoString;
+    }
+  };
 
   const handleBooking = async () => {
     if (!selectedDate) {
@@ -175,11 +222,8 @@ export default function BookScreen() {
         return;
       }
 
-      // Combine selectedDate and selectedTime into a local date then to ISO
-      const dateObj = new Date(selectedDate.rawDate);
-      const [hours, minutes] = selectedTime.split(':');
-      dateObj.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-      const requestedStart = dateObj.toISOString();
+      // Use the exact ISO start time of the selected slot directly to prevent timezone shift issues
+      const requestedStart = selectedTime;
 
       await api.bookAppointment(token, requestedStart, duration);
       
@@ -321,7 +365,12 @@ export default function BookScreen() {
       {/* 4. Booking Summary */}
       {selectedDate && selectedTime ? (
         <View style={[styles.summaryCard, { backgroundColor: theme.card }]}>
-          <Text style={[styles.summaryTitle, { textAlign: isArabic ? 'right' : 'left' }]}>{t.summaryTitle}</Text>
+          <View style={[styles.summaryHeaderRow, { flexDirection: isArabic ? 'row-reverse' : 'row' }]}>
+            <Text style={styles.summaryTitle}>{t.summaryTitle}</Text>
+            <TouchableOpacity onPress={() => setSelectedTime('')} style={styles.summaryCloseBtn}>
+              <Ionicons name="close" size={20} color="#C5A880" />
+            </TouchableOpacity>
+          </View>
           
           <View style={[styles.summaryRow, { flexDirection: isArabic ? 'row-reverse' : 'row' }]}>
             <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>{t.serviceLabel}</Text>
@@ -336,7 +385,7 @@ export default function BookScreen() {
           <View style={[styles.summaryRow, { flexDirection: isArabic ? 'row-reverse' : 'row' }]}>
             <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>{t.timeLabel}</Text>
             <Text style={[styles.summaryVal, { color: theme.textPrimary }]}>
-              {activeSlots.find(s => s.time === selectedTime)?.label || selectedTime}
+              {formatTimeLabel(selectedTime)}
             </Text>
           </View>
 
@@ -499,10 +548,18 @@ const styles = StyleSheet.create({
     color: '#C5A880',
     fontSize: 15,
     fontWeight: 'bold',
+  },
+  summaryHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255, 255, 255, 0.05)',
     paddingBottom: 10,
     marginBottom: 12,
+  },
+  summaryCloseBtn: {
+    padding: 4,
   },
   summaryRow: {
     justifyContent: 'space-between',

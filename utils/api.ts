@@ -229,7 +229,7 @@ export const api = {
   async getAvailableSlots(
     token: string,
     weekDate?: string
-  ): Promise<Schedule[]> {
+  ): Promise<AvailableSlot[]> {
     const week =
       weekDate ?? new Date().toISOString().split('T')[0];
     const res = await fetch(
@@ -241,7 +241,7 @@ export const api = {
         },
       }
     );
-    return handleResponse<Schedule[]>(res);
+    return handleResponse<AvailableSlot[]>(res);
   },
 
   // Services/Items (public — no auth required)
@@ -251,11 +251,12 @@ export const api = {
   },
 
   // Update Push Token
-  async updatePushToken(clerkUserId: string, pushToken: string): Promise<any> {
+  async updatePushToken(token: string, clerkUserId: string, pushToken: string): Promise<any> {
     const res = await fetch(`${BASE_URL}/api/users/update-push-token`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify({ clerkUserId, pushToken }),
     });
