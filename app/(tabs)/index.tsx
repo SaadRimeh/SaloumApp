@@ -7,21 +7,36 @@ import {
   Image, 
   TouchableOpacity, 
   FlatList, 
-  ActivityIndicator,
-  RefreshControl,
-  ImageBackground,
-  Modal,
-  Switch,
-  Alert
+  ActivityIndicator, 
+  RefreshControl, 
+  ImageBackground, 
+  Modal, 
+  Switch, 
+  Alert,
+  Platform
 } from 'react-native';
 import { useUser, useAuth } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Device from 'expo-device';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { api, Item } from '../../utils/api';
 import { useAppContext } from '../../utils/ThemeContext';
 
+// إعداد كيفية ظهور الإشعار حتى لو كان التطبيق مفتوحاً أمام الزبون
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+
 export default function HomeScreen() {
-  const { user } = useUser();
+  const { user, isSignedIn } = useUser();
   const { getToken, signOut } = useAuth();
   const router = useRouter();
 
@@ -75,6 +90,25 @@ export default function HomeScreen() {
   useEffect(() => {
     loadData();
   }, [isArabic]);
+
+  useEffect(() => {
+    async function setupNotifications() {
+      if (isSignedIn && user) {
+        const token = await registerForPushNotificationsAsync();
+        
+        if (token) {
+          try {
+            await api.updatePushToken(user.id, token);
+            console.log('تم إرسال التوكن للباك إند بنجاح!');
+          } catch (error) {
+            console.error('خطأ في إرسال التوكن:', error);
+          }
+        }
+      }
+    }
+
+    setupNotifications();
+  }, [isSignedIn, user]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -547,3 +581,42 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 });
+
+// دالة طلب الصلاحية واستخراج التوكن من جهاز الزبون
+async function registerForPushNotificationsAsync() {
+  let token;
+
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+    });
+  }
+
+  if (Device.isDevice) {
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    let finalStatus = existingStatus;
+    
+    if (existingStatus !== 'granted') {
+      const { status } = await Notifications.requestPermissionsAsync();
+      finalStatus = status;
+    }
+    
+    if (finalStatus !== 'granted') {
+      console.log('الزبون رفض إعطاء صلاحية الإشعارات');
+      return null;
+    }
+    
+    // استخراج التوكن باستخدام الـ projectId الخاص بمشروعك
+    const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    token = tokenData.data;
+    
+  } else {
+    console.log('يجب استخدام هاتف حقيقي لتجربة الإشعارات');
+  }
+
+  return token;
+}

@@ -249,4 +249,16 @@ export const api = {
     const res = await fetch(`${BASE_URL}/api/items`);
     return handleResponse<Item[]>(res);
   },
+
+  // Update Push Token
+  async updatePushToken(clerkUserId: string, pushToken: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/api/users/update-push-token`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ clerkUserId, pushToken }),
+    });
+    return handleResponse<any>(res);
+  },
 };
