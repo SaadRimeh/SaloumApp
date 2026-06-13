@@ -8,7 +8,7 @@ import { AppProvider, useAppContext } from '../utils/ThemeContext';
 
 SplashScreen.preventAutoHideAsync();
 
-const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
+const publishableKey = 'pk_live_Y2xlcmsuc3NkdmYueHl6JA';
 
 interface ErrorBoundaryProps {
   children: ReactNode;

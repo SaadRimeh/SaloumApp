@@ -12,6 +12,7 @@ import { useAuth } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api, Schedule, AvailableSlot } from '../utils/api';
+import { useAppContext } from '../utils/ThemeContext';
 
 interface DayItem {
   dateString: string;
@@ -22,40 +23,68 @@ interface DayItem {
 }
 
 export default function BookScreen() {
-  const { getToken } = useAuth();
+  const { getToken, isSignedIn, isLoaded } = useAuth();
   const router = useRouter();
+  const { theme, isArabic, isDark } = useAppContext();
 
   const [days, setDays] = useState<DayItem[]>([]);
   const [selectedDate, setSelectedDate] = useState<DayItem | null>(null);
   const [selectedTime, setSelectedTime] = useState<string>('');
-  const [duration, setDuration] = useState<number>(60); // Default 60 mins
+  const duration = 60; // Default 60 mins
   const [loading, setLoading] = useState(false);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [schedulesLoading, setSchedulesLoading] = useState(true);
+  const [schedulesError, setSchedulesError] = useState<string | null>(null);
 
-  // Fallback default time slots if backend schedules are empty or 401
-  const defaultTimeSlots = [
-    { time: '10:00', label: '10:00 ص' },
-    { time: '11:00', label: '11:00 ص' },
-    { time: '12:00', label: '12:00 م' },
-    { time: '13:00', label: '01:00 م' },
-    { time: '14:00', label: '02:00 م' },
-    { time: '15:00', label: '03:00 م' },
-    { time: '16:00', label: '04:00 م' },
-    { time: '17:00', label: '05:00 م' },
-    { time: '18:00', label: '06:00 م' },
-    { time: '19:00', label: '07:00 م' },
-    { time: '20:00', label: '08:00 م' },
-    { time: '21:00', label: '09:00 م' },
-  ];
+  const t = {
+    sec1Title: isArabic ? '1. اختر تاريخ الموعد' : '1. Choose Appointment Date',
+    sec2Title: isArabic ? '2. باقة الخدمة والمدة' : '2. Service Package & Duration',
+    royalCareTitle: isArabic ? 'العناية الملكية الكاملة' : 'Full Royal Care',
+    royalCareTime: isArabic ? '60 دقيقة' : '60 Minutes',
+    sec3Title: isArabic ? '3. اختر وقت الموعد' : '3. Choose Appointment Time',
+    summaryTitle: isArabic ? 'ملخص الحجز' : 'Booking Summary',
+    serviceLabel: isArabic ? 'الخدمة:' : 'Service:',
+    serviceVal: isArabic ? 'جلسة حلاقة مميزة' : 'Premium Haircut Session',
+    dateLabel: isArabic ? 'التاريخ:' : 'Date:',
+    timeLabel: isArabic ? 'الوقت:' : 'Time:',
+    durationLabel: isArabic ? 'المدة:' : 'Duration:',
+    durationVal: isArabic ? '60 دقيقة' : '60 minutes',
+    confirmBtn: isArabic ? 'تأكيد الحجز' : 'Confirm Booking',
+    
+    alertTitle: isArabic ? 'تنبيه' : 'Alert',
+    alertChooseDate: isArabic ? 'يرجى اختيار تاريخ الموعد' : 'Please choose appointment date',
+    alertChooseTime: isArabic ? 'يرجى اختيار وقت الموعد' : 'Please choose appointment time',
+    alertLoginRequired: isArabic ? 'يجب تسجيل الدخول للحجز' : 'You must login to book',
+    
+    successTitle: isArabic ? 'تم الحجز بنجاح' : 'Booking Successful',
+    successMsg: isArabic 
+      ? 'يسعدنا استقبالك في صالون سلوم. تم تسجيل حجزك وسيتم تأكيده فوراً.'
+      : 'We look forward to welcoming you to Salloum Salon. Your booking has been registered and will be confirmed shortly.',
+    successOk: isArabic ? 'موافق' : 'OK',
+    
+    errorTitle: isArabic ? 'خطأ' : 'Error',
+    errorMsg: isArabic 
+      ? 'حدث خطأ أثناء حجز الموعد. يرجى اختيار موعد آخر.'
+      : 'An error occurred while booking. Please choose another time.',
+      
+    loginRequiredTitle: isArabic ? 'حجز موعد جديد' : 'Book New Appointment',
+    loginRequiredSubtitle: isArabic 
+      ? 'يرجى تسجيل الدخول لعرض الأوقات المتاحة وتأكيد حجزك في صالون سلوم'
+      : 'Please login to view available times and confirm your booking at Salloum Salon',
+    loginBtnText: isArabic ? 'تسجيل الدخول' : 'Login',
+    
+    noSlots: isArabic ? 'لا توجد مواعيد متاحة في هذا اليوم' : 'No available appointments on this day',
+    loadError: isArabic ? 'فشل تحميل المواعيد المتاحة. يرجى المحاولة لاحقاً.' : 'Failed to load available appointments. Please try again later.'
+  };
 
   const generateNext7Days = () => {
     const nextDays: DayItem[] = [];
-    const dayNames = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-    const months = [
-      'كانون الثاني', 'شباط', 'آذار', 'نيسان', 'أيار', 'حزيران', 
-      'تموز', 'آب', 'أيلول', 'تشرين الأول', 'تشرين الثاني', 'كانون الأول'
-    ];
+    const dayNames = isArabic 
+      ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
+      : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const months = isArabic
+      ? ['كانون الثاني', 'شباط', 'آذار', 'نيسان', 'أيار', 'حزيران', 'تموز', 'آب', 'أيلول', 'تشرين الأول', 'تشرين الثاني', 'كانون الأول']
+      : ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     
     for (let i = 0; i < 7; i++) {
       const d = new Date();
@@ -73,6 +102,8 @@ export default function BookScreen() {
   };
 
   const fetchSchedules = async (weekDate?: string) => {
+    setSchedulesLoading(true);
+    setSchedulesError(null);
     try {
       const token = await getToken();
       if (token) {
@@ -80,7 +111,8 @@ export default function BookScreen() {
         setSchedules(data);
       }
     } catch (err: any) {
-      console.warn('Schedules endpoint failed or unauthorized, using local defaults', err.message);
+      console.warn('Schedules endpoint failed:', err.message);
+      setSchedulesError(t.loadError);
     } finally {
       setSchedulesLoading(false);
     }
@@ -88,14 +120,20 @@ export default function BookScreen() {
 
   useEffect(() => {
     generateNext7Days();
-    fetchSchedules();
-  }, []);
+    if (isSignedIn) {
+      fetchSchedules();
+    } else {
+      setSchedulesLoading(false);
+    }
+  }, [isSignedIn, isArabic]);
 
   // When user picks a date in a different week, re-fetch slots for that week
   const handleDateSelect = (item: DayItem) => {
     setSelectedDate(item);
     setSelectedTime('');
-    fetchSchedules(item.dateString);
+    if (isSignedIn) {
+      fetchSchedules(item.dateString);
+    }
   };
 
   // Get backend slots for the currently selected day, if any
@@ -107,7 +145,7 @@ export default function BookScreen() {
       const date = new Date(slot.start);
       let h = date.getHours();
       const m = date.getMinutes().toString().padStart(2, '0');
-      const ampm = h >= 12 ? 'م' : 'ص';
+      const ampm = h >= 12 ? (isArabic ? 'م' : 'PM') : (isArabic ? 'ص' : 'AM');
       h = h % 12 || 12;
       return {
         time: `${date.getHours().toString().padStart(2, '0')}:${m}`,
@@ -116,15 +154,15 @@ export default function BookScreen() {
     });
   };
 
-  const activeSlots = getSlotsForSelectedDate() ?? defaultTimeSlots;
+  const activeSlots = getSlotsForSelectedDate() ?? [];
 
   const handleBooking = async () => {
     if (!selectedDate) {
-      Alert.alert('تنبيه', 'يرجى اختيار تاريخ الموعد');
+      Alert.alert(t.alertTitle, t.alertChooseDate);
       return;
     }
     if (!selectedTime) {
-      Alert.alert('تنبيه', 'يرجى اختيار وقت الموعد');
+      Alert.alert(t.alertTitle, t.alertChooseTime);
       return;
     }
 
@@ -132,7 +170,7 @@ export default function BookScreen() {
     try {
       const token = await getToken();
       if (!token) {
-        Alert.alert('تنبيه', 'يجب تسجيل الدخول للحجز');
+        Alert.alert(t.alertTitle, t.alertLoginRequired);
         router.push('/(auth)/login');
         return;
       }
@@ -146,11 +184,11 @@ export default function BookScreen() {
       await api.bookAppointment(token, requestedStart, duration);
       
       Alert.alert(
-        'تم الحجز بنجاح',
-        'يسعدنا استقبالك في صالون الفخامة. تم تسجيل حجزك وسيتم تأكيده فوراً.',
+        t.successTitle,
+        t.successMsg,
         [
           { 
-            text: 'موافق', 
+            text: t.successOk, 
             onPress: () => {
               router.replace('/(tabs)/appointments');
             } 
@@ -159,18 +197,47 @@ export default function BookScreen() {
       );
     } catch (err: any) {
       console.warn('Booking error:', err);
-      Alert.alert('خطأ', err.message || 'حدث خطأ أثناء حجز الموعد. يرجى اختيار موعد آخر.');
+      Alert.alert(t.errorTitle, err.message || t.errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
+  if (!isLoaded) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#C5A880" />
+      </View>
+    );
+  }
+
+  if (isLoaded && !isSignedIn) {
+    return (
+      <View style={[styles.loginPromptContainer, { backgroundColor: theme.bg }]}>
+        <Ionicons name="calendar-outline" size={80} color="#C5A880" style={{ marginBottom: 20 }} />
+        <Text style={[styles.loginPromptTitle, { color: theme.textPrimary }]}>{t.loginRequiredTitle}</Text>
+        <Text style={[styles.loginPromptSubtitle, { color: theme.textSecondary }]}>
+          {t.loginRequiredSubtitle}
+        </Text>
+        <TouchableOpacity 
+          style={styles.loginBtn}
+          onPress={() => router.push('/(auth)/login')}
+        >
+          <View style={{ flexDirection: isArabic ? 'row-reverse' : 'row', alignItems: 'center' }}>
+            <Text style={styles.loginBtnText}>{t.loginBtnText}</Text>
+            <Ionicons name="log-in-outline" size={20} color="#121212" style={isArabic ? { marginRight: 8 } : { marginLeft: 8 }} />
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+    <ScrollView style={[styles.container, { backgroundColor: theme.bg }]} contentContainerStyle={styles.scrollContent}>
       {/* 1. Date Selector */}
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>1. اختر تاريخ الموعد</Text>
+        <View style={[styles.sectionHeader, { flexDirection: isArabic ? 'row-reverse' : 'row' }]}>
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.sec1Title}</Text>
           <Ionicons name="calendar-outline" size={18} color="#C5A880" />
         </View>
 
@@ -184,117 +251,134 @@ export default function BookScreen() {
             return (
               <TouchableOpacity
                 key={item.dateString}
-                style={[styles.dateCard, isSelected && styles.selectedDateCard]}
+                style={[
+                  styles.dateCard, 
+                  { backgroundColor: theme.card, borderColor: theme.border },
+                  isSelected && styles.selectedDateCard
+                ]}
                 onPress={() => handleDateSelect(item)}
               >
-                <Text style={[styles.dayName, isSelected && styles.selectedText]}>{item.dayName}</Text>
-                <Text style={[styles.dayNum, isSelected && styles.selectedTextGold]}>{item.dayNum}</Text>
-                <Text style={[styles.monthName, isSelected && styles.selectedText]}>{item.monthName}</Text>
+                <Text style={[styles.dayName, { color: theme.textSecondary }, isSelected && styles.selectedText]}>{item.dayName}</Text>
+                <Text style={[styles.dayNum, { color: theme.textPrimary }, isSelected && styles.selectedTextGold]}>{item.dayNum}</Text>
+                <Text style={[styles.monthName, { color: theme.textSecondary }, isSelected && styles.selectedText]}>{item.monthName}</Text>
               </TouchableOpacity>
             );
           })}
         </ScrollView>
       </View>
 
-      {/* 2. Duration Selector */}
+      {/* 2. Service & Duration Details */}
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>2. اختر باقة الخدمة والمدة</Text>
+        <View style={[styles.sectionHeader, { flexDirection: isArabic ? 'row-reverse' : 'row', gap: 8 }]}>
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.sec2Title}</Text>
           <Ionicons name="cut-outline" size={18} color="#C5A880" />
         </View>
 
-        <View style={styles.durationRow}>
-          <TouchableOpacity 
-            style={[styles.durationCard, duration === 60 && styles.activeDurationCard]}
-            onPress={() => setDuration(60)}
-          >
-            <Ionicons name="diamond-outline" size={24} color={duration === 60 ? '#C5A880' : '#888'} />
-            <Text style={[styles.durationTitle, duration === 60 && styles.activeDurationText]}>العناية الملكية الكاملة</Text>
-            <Text style={styles.durationTime}>60 دقيقة</Text>
-            <Text style={styles.durationDesc}>شعر + لحية + سكراب للوجه + بخار</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.durationCard, duration === 30 && styles.activeDurationCard]}
-            onPress={() => setDuration(30)}
-          >
-            <Ionicons name="cut-outline" size={24} color={duration === 30 ? '#C5A880' : '#888'} />
-            <Text style={[styles.durationTitle, duration === 30 && styles.activeDurationText]}>حلاقة سريعة</Text>
-            <Text style={styles.durationTime}>30 دقيقة</Text>
-            <Text style={styles.durationDesc}>قص وتصفيف شعر أو تحديد لحية</Text>
-          </TouchableOpacity>
+        <View style={[styles.singleDurationCard, { backgroundColor: theme.card, borderColor: '#C5A880' }]}>
+          <Ionicons name="diamond-outline" size={24} color="#C5A880" style={{ marginBottom: 6 }} />
+          <Text style={styles.durationTitleGold}>{t.royalCareTitle}</Text>
+          <Text style={[styles.durationTime, { color: theme.textPrimary }]}>{t.royalCareTime}</Text>
         </View>
       </View>
 
       {/* 3. Time Slots */}
       <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>3. اختر وقت الموعد</Text>
+        <View style={[styles.sectionHeader, { flexDirection: isArabic ? 'row-reverse' : 'row', gap: 8 }]}>
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>{t.sec3Title}</Text>
           <Ionicons name="time-outline" size={18} color="#C5A880" />
         </View>
 
-        <View style={styles.timeGrid}>
-          {activeSlots.map((slot) => {
-            const isSelected = selectedTime === slot.time;
-            return (
-              <TouchableOpacity
-                key={slot.time}
-                style={[styles.timeSlot, isSelected && styles.selectedTimeSlot]}
-                onPress={() => setSelectedTime(slot.time)}
-              >
-                <Text style={[styles.timeSlotText, isSelected && styles.selectedTimeText]}>
-                  {slot.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+        <View style={[styles.timeGrid, { flexDirection: isArabic ? 'row-reverse' : 'row' }]}>
+          {schedulesLoading ? (
+            <ActivityIndicator size="small" color="#C5A880" style={{ marginVertical: 20, alignSelf: 'center', width: '100%' }} />
+          ) : schedulesError ? (
+            <Text style={[styles.noSlotsText, { color: theme.textSecondary }]}>{schedulesError}</Text>
+          ) : activeSlots.length > 0 ? (
+            activeSlots.map((slot) => {
+              const isSelected = selectedTime === slot.time;
+              return (
+                <TouchableOpacity
+                  key={slot.time}
+                  style={[
+                    styles.timeSlot, 
+                    { backgroundColor: theme.card, borderColor: theme.border },
+                    isSelected && styles.selectedTimeSlot
+                  ]}
+                  onPress={() => setSelectedTime(slot.time)}
+                >
+                  <Text style={[styles.timeSlotText, { color: theme.textSecondary }, isSelected && styles.selectedTimeText]}>
+                    {slot.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })
+          ) : (
+            <Text style={[styles.noSlotsText, { color: theme.textSecondary }]}>{t.noSlots}</Text>
+          )}
         </View>
       </View>
 
       {/* 4. Booking Summary */}
       {selectedDate && selectedTime ? (
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryTitle}>ملخص الحجز الفاخر</Text>
+        <View style={[styles.summaryCard, { backgroundColor: theme.card }]}>
+          <Text style={[styles.summaryTitle, { textAlign: isArabic ? 'right' : 'left' }]}>{t.summaryTitle}</Text>
           
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryVal}>جلسة حلاقة مميزة</Text>
-            <Text style={styles.summaryLabel}>الخدمة:</Text>
+          <View style={[styles.summaryRow, { flexDirection: isArabic ? 'row-reverse' : 'row' }]}>
+            <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>{t.serviceLabel}</Text>
+            <Text style={[styles.summaryVal, { color: theme.textPrimary }]}>{t.serviceVal}</Text>
           </View>
 
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryVal}>{selectedDate.dayName}، {selectedDate.dayNum} {selectedDate.monthName}</Text>
-            <Text style={styles.summaryLabel}>التاريخ:</Text>
+          <View style={[styles.summaryRow, { flexDirection: isArabic ? 'row-reverse' : 'row' }]}>
+            <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>{t.dateLabel}</Text>
+            <Text style={[styles.summaryVal, { color: theme.textPrimary }]}>{selectedDate.dayName}، {selectedDate.dayNum} {selectedDate.monthName}</Text>
           </View>
 
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryVal}>
-              {defaultTimeSlots.find(s => s.time === selectedTime)?.label ||
-              activeSlots.find(s => s.time === selectedTime)?.label ||
-              selectedTime}
+          <View style={[styles.summaryRow, { flexDirection: isArabic ? 'row-reverse' : 'row' }]}>
+            <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>{t.timeLabel}</Text>
+            <Text style={[styles.summaryVal, { color: theme.textPrimary }]}>
+              {activeSlots.find(s => s.time === selectedTime)?.label || selectedTime}
             </Text>
-            <Text style={styles.summaryLabel}>الوقت:</Text>
           </View>
 
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryVal}>{duration} دقيقة</Text>
-            <Text style={styles.summaryLabel}>المدة:</Text>
+          <View style={[styles.summaryRow, { flexDirection: isArabic ? 'row-reverse' : 'row' }]}>
+            <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>{t.durationLabel}</Text>
+            <Text style={[styles.summaryVal, { color: theme.textPrimary }]}>{t.durationVal}</Text>
           </View>
         </View>
       ) : null}
 
       {/* Submit Button */}
       <TouchableOpacity 
-        style={[styles.bookBtn, (!selectedDate || !selectedTime) && styles.disabledBookBtn]}
+        style={[
+          styles.bookBtn, 
+          { 
+            backgroundColor: (!selectedDate || !selectedTime) 
+              ? (isDark ? '#333333' : '#E0E0E0') 
+              : '#C5A880' 
+          }
+        ]}
         onPress={handleBooking}
         disabled={loading || !selectedDate || !selectedTime}
       >
         {loading ? (
-          <ActivityIndicator color="#121212" />
+          <ActivityIndicator color={isDark ? '#121212' : '#FFFFFF'} />
         ) : (
-          <>
-            <Text style={styles.bookBtnText}>تأكيد الحجز الفاخر</Text>
-            <Ionicons name="checkmark-done" size={20} color="#121212" style={{ marginRight: 8 }} />
-          </>
+          <View style={{ flexDirection: isArabic ? 'row-reverse' : 'row', alignItems: 'center' }}>
+            <Text style={[
+              styles.bookBtnText, 
+              { 
+                color: (!selectedDate || !selectedTime) 
+                  ? '#888888' 
+                  : '#121212' 
+              }
+            ]}>{t.confirmBtn}</Text>
+            <Ionicons 
+              name="checkmark-done" 
+              size={20} 
+              color={(!selectedDate || !selectedTime) ? '#888888' : '#121212'} 
+              style={isArabic ? { marginRight: 8 } : { marginLeft: 8 }} 
+            />
+          </View>
         )}
       </TouchableOpacity>
     </ScrollView>
@@ -304,7 +388,6 @@ export default function BookScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#121212',
   },
   scrollContent: {
     padding: 16,
@@ -314,46 +397,38 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   sectionHeader: {
-    flexDirection: 'row-reverse',
     alignItems: 'center',
     marginBottom: 14,
   },
   sectionTitle: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: 'bold',
-    marginRight: 8,
   },
   dateList: {
     flexDirection: 'row',
   },
   dateCard: {
-    backgroundColor: '#1E1E1E',
     width: 80,
     height: 95,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 10,
+    marginHorizontal: 5,
   },
   selectedDateCard: {
     borderColor: '#C5A880',
     backgroundColor: 'rgba(197, 168, 128, 0.12)',
   },
   dayName: {
-    color: '#888',
     fontSize: 11,
   },
   dayNum: {
-    color: '#FFF',
     fontSize: 20,
     fontWeight: 'bold',
     marginVertical: 4,
   },
   monthName: {
-    color: '#888',
     fontSize: 10,
   },
   selectedText: {
@@ -364,58 +439,40 @@ const styles = StyleSheet.create({
     color: '#C5A880',
     fontWeight: 'bold',
   },
-  durationRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  durationCard: {
-    flex: 0.48,
-    backgroundColor: '#1E1E1E',
+  singleDurationCard: {
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.05)',
     borderRadius: 14,
-    padding: 14,
+    padding: 18,
     alignItems: 'center',
+    width: '100%',
   },
-  activeDurationCard: {
-    borderColor: '#C5A880',
-    backgroundColor: 'rgba(197, 168, 128, 0.12)',
-  },
-  durationTitle: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: 'bold',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  activeDurationText: {
+  durationTitleGold: {
     color: '#C5A880',
-  },
-  durationTime: {
-    color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: 'bold',
     marginTop: 4,
+    textAlign: 'center',
+  },
+  durationTime: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginTop: 6,
   },
   durationDesc: {
-    color: '#888',
-    fontSize: 9,
+    fontSize: 11,
     textAlign: 'center',
     marginTop: 6,
-    lineHeight: 12,
+    lineHeight: 16,
   },
   timeGrid: {
-    flexDirection: 'row-reverse',
     flexWrap: 'wrap',
     marginHorizontal: -4,
   },
   timeSlot: {
-    backgroundColor: '#1E1E1E',
     width: '23%',
     height: 40,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
     justifyContent: 'center',
     alignItems: 'center',
     margin: '1%',
@@ -425,7 +482,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(197, 168, 128, 0.12)',
   },
   timeSlotText: {
-    color: '#A0A0A0',
     fontSize: 12,
   },
   selectedTimeText: {
@@ -433,7 +489,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   summaryCard: {
-    backgroundColor: '#1E1E1E',
     borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(197, 168, 128, 0.2)',
@@ -448,10 +503,8 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255, 255, 255, 0.05)',
     paddingBottom: 10,
     marginBottom: 12,
-    textAlign: 'right',
   },
   summaryRow: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: 8,
   },
@@ -465,7 +518,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   bookBtn: {
-    backgroundColor: '#C5A880',
     height: 52,
     borderRadius: 12,
     flexDirection: 'row',
@@ -477,10 +529,54 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
-  disabledBookBtn: {
-    backgroundColor: '#333333',
-  },
   bookBtnText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  noSlotsText: {
+    color: '#888',
+    fontSize: 14,
+    textAlign: 'center',
+    width: '100%',
+    paddingVertical: 12,
+  },
+  loginPromptContainer: {
+    flex: 1,
+    backgroundColor: '#121212',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  loginPromptTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  loginPromptSubtitle: {
+    color: '#888888',
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 30,
+    paddingHorizontal: 20,
+  },
+  loginBtn: {
+    backgroundColor: '#C5A880',
+    height: 52,
+    borderRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+    shadowColor: '#C5A880',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  loginBtnText: {
     color: '#121212',
     fontSize: 16,
     fontWeight: 'bold',

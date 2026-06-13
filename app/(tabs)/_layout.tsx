@@ -54,7 +54,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="products"
         options={{
-          title: isArabic ? 'المتجر الفاخر' : 'Luxury Shop',
+          title: isArabic ? 'المتجر' : 'Shop',
           tabBarLabel: isArabic ? 'المتجر' : 'Shop',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'bag-handle' : 'bag-handle-outline'} size={22} color={color} />
