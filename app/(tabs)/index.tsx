@@ -184,7 +184,7 @@ export default function HomeScreen() {
 
       {/* Hero Banner */}
       <ImageBackground
-        source={require('../../assets/images/barbershop_bg.png')}
+        source={require('../../assets/images/barbershop_bg.jpg')}
         style={styles.banner}
         imageStyle={{ borderRadius: 16 }}
       >

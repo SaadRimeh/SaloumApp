@@ -5,7 +5,7 @@ export default function Index() {
   return (
     <View style={styles.container}>
       <Image
-        source={require('../assets/images/barbershop_bg.png')}
+        source={require('../assets/images/barbershop_bg.jpg')}
         style={StyleSheet.absoluteFillObject}
         blurRadius={5}
       />

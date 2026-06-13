@@ -92,7 +92,7 @@ export default function LoginScreen() {
 
   return (
     <ImageBackground 
-      source={require('../../assets/images/barbershop_bg.png')} 
+      source={require('../../assets/images/barbershop_bg.jpg')} 
       style={styles.background}
       resizeMode="cover"
     >
