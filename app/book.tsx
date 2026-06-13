@@ -77,7 +77,7 @@ export default function BookScreen() {
     loadError: isArabic ? 'فشل تحميل المواعيد المتاحة. يرجى المحاولة لاحقاً.' : 'Failed to load available appointments. Please try again later.'
   };
 
-  const generateNext7Days = () => {
+  const generateNext7Days = (): DayItem[] => {
     const nextDays: DayItem[] = [];
     const dayNames = isArabic 
       ? ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت']
@@ -105,25 +105,58 @@ export default function BookScreen() {
     }
     setDays(nextDays);
     setSelectedDate(nextDays[0]); // Select today by default
+    return nextDays;
   };
 
-  const fetchSchedules = async (weekDate?: string) => {
+  const fetchSchedulesForDays = async (daysList: DayItem[]) => {
     setSchedulesLoading(true);
     setSchedulesError(null);
     try {
       const token = await getToken();
-      if (token) {
-        const queryDate = weekDate ?? selectedDate?.dateString ?? new Date().toISOString().split('T')[0];
-        console.log('[fetchSchedules] Querying slots for date:', queryDate);
-        const data = await api.getAvailableSlots(token, queryDate);
-        console.log('[fetchSchedules] Received schedules count:', data?.length);
-        console.log('[fetchSchedules] Raw first schedule object:', JSON.stringify(data?.[0], null, 2));
-        console.log('[fetchSchedules] Schedules data detail:', JSON.stringify(data?.map(s => ({ start: s.start, end: s.end })), null, 2));
-        setSchedules(data);
+      if (!token) {
+        setSchedulesLoading(false);
+        return;
       }
+      
+      console.log('[fetchSchedulesForDays] Pre-fetching slots sequentially for days:', daysList.map(d => d.dateString));
+      
+      const allSlots: AvailableSlot[] = [];
+      
+      for (const day of daysList) {
+        let attempts = 0;
+        let success = false;
+        let daySlots: AvailableSlot[] = [];
+        
+        while (attempts < 2 && !success) {
+          try {
+            attempts++;
+            const res = await api.getAvailableSlots(token, day.dateString);
+            daySlots = Array.isArray(res) ? res : [];
+            success = true;
+          } catch (err: any) {
+            console.warn(`[fetchSchedulesForDays] Attempt ${attempts} failed for ${day.dateString}:`, err.message);
+            if (attempts < 2) {
+              await new Promise(resolve => setTimeout(resolve, 100));
+            }
+          }
+        }
+        
+        daySlots.forEach(slot => {
+          if (slot.start && !allSlots.some(s => s.start === slot.start)) {
+            allSlots.push(slot);
+          }
+        });
+        
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+
+      console.log('[fetchSchedulesForDays] Total unique slots loaded in cache:', allSlots.length);
+      allSlots.forEach((slot, index) => {
+        console.log(`[Cache Slot #${index}] start=${slot.start} | end=${slot.end}`);
+      });
+      setSchedules(allSlots);
     } catch (err: any) {
-      console.warn('Schedules endpoint failed:', err.message);
-      console.log('[fetchSchedules] Detailed error:', err);
+      console.warn('Pre-fetching schedules failed:', err.message);
       setSchedulesError(t.loadError);
     } finally {
       setSchedulesLoading(false);
@@ -131,23 +164,20 @@ export default function BookScreen() {
   };
 
   useEffect(() => {
-    generateNext7Days();
+    const nextDays = generateNext7Days();
     if (isLoaded) {
       if (isSignedIn) {
-        fetchSchedules();
+        fetchSchedulesForDays(nextDays);
       } else {
         setSchedulesLoading(false);
       }
     }
   }, [isLoaded, isSignedIn, isArabic]);
 
-  // When user picks a date in a different week, re-fetch slots for that week
+  // When user picks a date, select it and clear selected time
   const handleDateSelect = (item: DayItem) => {
     setSelectedDate(item);
     setSelectedTime('');
-    if (isSignedIn) {
-      fetchSchedules(item.dateString);
-    }
   };
 
   // Get backend slots for the currently selected day, if any
@@ -155,19 +185,37 @@ export default function BookScreen() {
     if (!selectedDate || schedules.length === 0) return null;
     console.log('[getSlotsForSelectedDate] selectedDate.dateString is:', selectedDate.dateString);
     
-    // Filter slots starting on the selected date in UTC time
-    const daySlots = schedules.filter(slot => {
+    // 1. Split available intervals into individual 60-minute (1 hour) slots
+    const splitSlots: AvailableSlot[] = [];
+    schedules.forEach((slot, index) => {
+      if (!slot.start || !slot.end) return;
+      const intervalStart = new Date(slot.start);
+      const intervalEnd = new Date(slot.end);
+      
+      const stepMs = 60 * 60 * 1000; // 60 minutes
+      let current = new Date(intervalStart);
+      
+      while (current.getTime() + stepMs <= intervalEnd.getTime()) {
+        splitSlots.push({
+          start: current.toISOString(),
+          end: new Date(current.getTime() + stepMs).toISOString()
+        });
+        current = new Date(current.getTime() + stepMs);
+      }
+    });
+
+    // 2. Filter slots starting on the selected date in UTC time
+    const daySlots = splitSlots.filter(slot => {
       if (!slot.start) return false;
       const dateObj = new Date(slot.start);
       const year = dateObj.getUTCFullYear();
       const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
       const day = String(dateObj.getUTCDate()).padStart(2, '0');
       const localSlotDate = `${year}-${month}-${day}`;
-      console.log('Comparing slot.start:', slot.start, '-> UTCDateString:', localSlotDate, 'with selectedDate:', selectedDate.dateString);
       return localSlotDate === selectedDate.dateString;
     });
 
-    console.log('[getSlotsForSelectedDate] Found matching slots count:', daySlots.length);
+    console.log('[getSlotsForSelectedDate] Found matching split slots count:', daySlots.length);
     if (daySlots.length === 0) return null;
 
     // Sort slots chronologically

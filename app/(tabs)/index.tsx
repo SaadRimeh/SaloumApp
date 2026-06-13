@@ -534,13 +534,15 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
   modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderRadius: 20,
     padding: 24,
-    minHeight: 300,
+    width: '90%',
+    maxWidth: 400,
   },
   modalHeader: {
     justifyContent: 'space-between',
