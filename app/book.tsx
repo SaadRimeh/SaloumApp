@@ -11,7 +11,7 @@ import {
 import { useAuth } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { api, Schedule } from '../utils/api';
+import { api, Schedule, AvailableSlot } from '../utils/api';
 
 interface DayItem {
   dateString: string;
@@ -72,11 +72,11 @@ export default function BookScreen() {
     setSelectedDate(nextDays[0]); // Select today by default
   };
 
-  const fetchSchedules = async () => {
+  const fetchSchedules = async (weekDate?: string) => {
     try {
       const token = await getToken();
       if (token) {
-        const data = await api.getSchedules(token);
+        const data = await api.getAvailableSlots(token, weekDate);
         setSchedules(data);
       }
     } catch (err: any) {
@@ -90,6 +90,33 @@ export default function BookScreen() {
     generateNext7Days();
     fetchSchedules();
   }, []);
+
+  // When user picks a date in a different week, re-fetch slots for that week
+  const handleDateSelect = (item: DayItem) => {
+    setSelectedDate(item);
+    setSelectedTime('');
+    fetchSchedules(item.dateString);
+  };
+
+  // Get backend slots for the currently selected day, if any
+  const getSlotsForSelectedDate = (): { time: string; label: string }[] | null => {
+    if (!selectedDate || schedules.length === 0) return null;
+    const daySchedule = schedules.find(s => s.date === selectedDate.dateString);
+    if (!daySchedule || !daySchedule.slots || daySchedule.slots.length === 0) return null;
+    return daySchedule.slots.map((slot: AvailableSlot) => {
+      const date = new Date(slot.start);
+      let h = date.getHours();
+      const m = date.getMinutes().toString().padStart(2, '0');
+      const ampm = h >= 12 ? 'م' : 'ص';
+      h = h % 12 || 12;
+      return {
+        time: `${date.getHours().toString().padStart(2, '0')}:${m}`,
+        label: `${h}:${m} ${ampm}`,
+      };
+    });
+  };
+
+  const activeSlots = getSlotsForSelectedDate() ?? defaultTimeSlots;
 
   const handleBooking = async () => {
     if (!selectedDate) {
@@ -158,7 +185,7 @@ export default function BookScreen() {
               <TouchableOpacity
                 key={item.dateString}
                 style={[styles.dateCard, isSelected && styles.selectedDateCard]}
-                onPress={() => setSelectedDate(item)}
+                onPress={() => handleDateSelect(item)}
               >
                 <Text style={[styles.dayName, isSelected && styles.selectedText]}>{item.dayName}</Text>
                 <Text style={[styles.dayNum, isSelected && styles.selectedTextGold]}>{item.dayNum}</Text>
@@ -207,7 +234,7 @@ export default function BookScreen() {
         </View>
 
         <View style={styles.timeGrid}>
-          {defaultTimeSlots.map((slot) => {
+          {activeSlots.map((slot) => {
             const isSelected = selectedTime === slot.time;
             return (
               <TouchableOpacity
@@ -241,7 +268,9 @@ export default function BookScreen() {
 
           <View style={styles.summaryRow}>
             <Text style={styles.summaryVal}>
-              {defaultTimeSlots.find(s => s.time === selectedTime)?.label || selectedTime}
+              {defaultTimeSlots.find(s => s.time === selectedTime)?.label ||
+              activeSlots.find(s => s.time === selectedTime)?.label ||
+              selectedTime}
             </Text>
             <Text style={styles.summaryLabel}>الوقت:</Text>
           </View>

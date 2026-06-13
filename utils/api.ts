@@ -18,47 +18,75 @@ export interface Item {
   name: string;
   price: number;
   isAvailable: boolean;
+  /** 'male' | 'female' | 'both' */
   gender: string;
   createdAt?: string;
   updatedAt?: string;
 }
 
+export interface AvailableSlot {
+  start: string;
+  end: string;
+}
+
 export interface Schedule {
-  _id: string;
-  dayOfWeek?: string;
-  date?: string;
-  slots?: string[] | { time: string; available: boolean }[];
-  startTime?: string;
-  endTime?: string;
-  isAvailable?: boolean;
+  date: string;
+  dayOfWeek: string;
+  slots: AvailableSlot[];
 }
 
 export interface Appointment {
   _id: string;
-  userId: string;
+  /** ObjectId string or populated customer object */
+  customer:
+    | string
+    | {
+        _id: string;
+        name: string;
+        phone: string;
+        role: string;
+      };
   requestedStart: string;
-  durationMinutes: number;
-  status: 'pending' | 'confirmed' | 'cancelled' | 'completed';
+  requestedEnd: string;
+  /** 'Pending' | 'Accepted' | 'Rejected' | 'Cancelled' */
+  status: 'Pending' | 'Accepted' | 'Rejected' | 'Cancelled';
+  rejectionReason: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export interface Order {
   _id: string;
-  userId: string;
-  productId: string | Product;
+  /** ObjectId string or populated customer object */
+  customer: string | object;
+  /** ObjectId string or populated product object */
+  product:
+    | string
+    | {
+        _id: string;
+        name: string;
+        price: number;
+        category: string;
+        imageURL: string;
+      };
   reservedQuantity: number;
-  status: string;
+  /** 'Reserved' | 'Delivered' | 'Cancelled' */
+  status: 'Reserved' | 'Delivered' | 'Cancelled';
   createdAt: string;
   updatedAt: string;
 }
 
 export interface UserProfile {
-  _id: string;
-  clerkId: string;
-  email: string;
-  name?: string;
-  role: 'customer' | 'admin' | 'barber';
+  user: {
+    _id: string;
+    clerkUserId: string;
+    name: string;
+    phone: string;
+    /** 'Customer' | 'Admin' */
+    role: string;
+    createdAt: string;
+    updatedAt: string;
+  };
   appointments: Appointment[];
   orders: Order[];
 }
@@ -94,7 +122,7 @@ export const api = {
     const res = await fetch(`${BASE_URL}/api/users/sync`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
     return handleResponse<any>(res);
@@ -105,7 +133,7 @@ export const api = {
     const res = await fetch(`${BASE_URL}/api/users/profile`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
     return handleResponse<UserProfile>(res);
@@ -123,86 +151,102 @@ export const api = {
   },
 
   // Product Reservations (Orders)
-  async createReservation(token: string, productId: string, reservedQuantity: number): Promise<Order> {
+  async createReservation(
+    token: string,
+    productId: string,
+    reservedQuantity: number
+  ): Promise<{ message: string; order: Order }> {
     const res = await fetch(`${BASE_URL}/api/orders`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ productId, reservedQuantity }),
     });
-    return handleResponse<Order>(res);
+    return handleResponse<{ message: string; order: Order }>(res);
   },
 
+  // GET /api/orders/me — returns the current user's orders sorted by newest
   async getOrders(token: string): Promise<Order[]> {
-    const res = await fetch(`${BASE_URL}/api/orders`, {
+    const res = await fetch(`${BASE_URL}/api/orders/me`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
     return handleResponse<Order[]>(res);
   },
 
   // Appointments
-  async bookAppointment(token: string, requestedStart: string, durationMinutes: number): Promise<Appointment> {
+  async bookAppointment(
+    token: string,
+    requestedStart: string,
+    durationMinutes: number
+  ): Promise<Appointment> {
     const res = await fetch(`${BASE_URL}/api/appointments`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({ requestedStart, durationMinutes }),
     });
     return handleResponse<Appointment>(res);
   },
 
+  // GET /api/appointments/me — returns the current user's appointments sorted by date
   async getMyAppointments(token: string): Promise<Appointment[]> {
-    // There are two endpoints in postman, we will try appointments/me first, then fallback to appointments
-    try {
-      const res = await fetch(`${BASE_URL}/api/appointments/me`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      return await handleResponse<Appointment[]>(res);
-    } catch {
-      const res = await fetch(`${BASE_URL}/api/appointments`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      });
-      return handleResponse<Appointment[]>(res);
-    }
-  },
-
-  async cancelAppointment(token: string, appointmentId: string): Promise<any> {
-    const res = await fetch(`${BASE_URL}/api/appointments/${appointmentId}/cancel`, {
-      method: 'PATCH',
+    const res = await fetch(`${BASE_URL}/api/appointments/me`, {
+      method: 'GET',
       headers: {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
       },
     });
+    return handleResponse<Appointment[]>(res);
+  },
+
+  // PATCH /api/appointments/:appointmentId/cancel
+  async cancelAppointment(token: string, appointmentId: string): Promise<any> {
+    const res = await fetch(
+      `${BASE_URL}/api/appointments/${appointmentId}/cancel`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
     return handleResponse<any>(res);
   },
 
-  // Schedules (available hours)
-  async getSchedules(token: string): Promise<Schedule[]> {
-    const res = await fetch(`${BASE_URL}/api/schedules`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
+  /**
+   * GET /api/schedules/available?week=YYYY-MM-DD
+   * Returns available slots for the week containing the given date.
+   * @param token  Bearer token
+   * @param weekDate  Any date within the desired week (YYYY-MM-DD). Defaults to today.
+   */
+  async getAvailableSlots(
+    token: string,
+    weekDate?: string
+  ): Promise<Schedule[]> {
+    const week =
+      weekDate ?? new Date().toISOString().split('T')[0];
+    const res = await fetch(
+      `${BASE_URL}/api/schedules/available?week=${week}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
     return handleResponse<Schedule[]>(res);
   },
 
-  // Services/Items (unauthenticated/authenticated)
+  // Services/Items (public — no auth required)
   async getItems(): Promise<Item[]> {
     const res = await fetch(`${BASE_URL}/api/items`);
     return handleResponse<Item[]>(res);
-  }
+  },
 };

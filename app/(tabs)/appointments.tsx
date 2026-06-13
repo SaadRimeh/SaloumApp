@@ -35,12 +35,11 @@ export default function AppointmentsScreen() {
     cancelSuccessMsg: isArabic ? 'تم إلغاء موعدك بنجاح' : 'Appointment cancelled successfully',
     cancelError: isArabic ? 'فشل إلغاء الموعد' : 'Failed to cancel appointment',
     statusPending: isArabic ? 'قيد الانتظار' : 'Pending',
-    statusConfirmed: isArabic ? 'مؤكد' : 'Confirmed',
+    statusAccepted: isArabic ? 'مؤكد' : 'Accepted',
+    statusRejected: isArabic ? 'مرفوض' : 'Rejected',
     statusCancelled: isArabic ? 'ملغي' : 'Cancelled',
-    statusCompleted: isArabic ? 'مكتمل' : 'Completed',
     serviceTitle: isArabic ? 'جلسة حلاقة وتصفيف' : 'Haircut & Styling',
-    duration: isArabic ? 'المدة المقدرة' : 'Est. Duration',
-    min: isArabic ? 'دقيقة' : 'min',
+    endTime: isArabic ? 'وقت الانتهاء' : 'End Time',
     cancelBtn: isArabic ? 'إلغاء الموعد' : 'Cancel Appointment',
     tabPast: isArabic ? 'السابقة والملغاة' : 'Past & Cancelled',
     tabUpcoming: isArabic ? 'القادمة' : 'Upcoming',
@@ -48,6 +47,7 @@ export default function AppointmentsScreen() {
     noAppsUpcoming: isArabic ? 'ليس لديك أي مواعيد نشطة قادمة. ابدأ بحجز موعد الآن!' : 'You have no upcoming appointments. Book one now!',
     noAppsPast: isArabic ? 'سجل مواعيدك السابقة والملغاة يظهر هنا.' : 'Your past and cancelled appointments will appear here.',
     bookNow: isArabic ? 'احجز موعد الآن' : 'Book Now',
+    rejectionReason: isArabic ? 'سبب الرفض' : 'Rejection Reason',
     sun: isArabic ? 'الأحد' : 'Sun',
     mon: isArabic ? 'الإثنين' : 'Mon',
     tue: isArabic ? 'الثلاثاء' : 'Tue',
@@ -155,12 +155,12 @@ export default function AppointmentsScreen() {
     const now = new Date().getTime();
     return appointments.filter(apt => {
       const isUpcomingTime = new Date(apt.requestedStart).getTime() > now;
-      const isActiveStatus = apt.status === 'pending' || apt.status === 'confirmed';
+      const isActiveStatus = apt.status === 'Pending' || apt.status === 'Accepted';
       
       if (activeTab === 'upcoming') {
         return isUpcomingTime && isActiveStatus;
       } else {
-        return !isUpcomingTime || apt.status === 'cancelled' || apt.status === 'completed';
+        return !isUpcomingTime || apt.status === 'Cancelled' || apt.status === 'Rejected';
       }
     });
   };
@@ -171,21 +171,21 @@ export default function AppointmentsScreen() {
     let textColor = '#FFC107';
     let iconName: any = 'time-outline';
 
-    if (status === 'confirmed') {
-      text = t.statusConfirmed;
+    if (status === 'Accepted') {
+      text = t.statusAccepted;
       bgColor = 'rgba(76, 175, 80, 0.15)';
       textColor = '#4CAF50';
       iconName = 'checkmark-circle-outline';
-    } else if (status === 'cancelled') {
+    } else if (status === 'Cancelled') {
       text = t.statusCancelled;
       bgColor = 'rgba(244, 67, 54, 0.15)';
       textColor = '#F44336';
       iconName = 'close-circle-outline';
-    } else if (status === 'completed') {
-      text = t.statusCompleted;
-      bgColor = 'rgba(158, 158, 158, 0.15)';
-      textColor = '#9E9E9E';
-      iconName = 'checkmark-done-outline';
+    } else if (status === 'Rejected') {
+      text = t.statusRejected;
+      bgColor = 'rgba(158, 82, 82, 0.15)';
+      textColor = '#FF7043';
+      iconName = 'ban-outline';
     }
 
     return (
@@ -201,7 +201,7 @@ export default function AppointmentsScreen() {
   const renderAppointmentItem = ({ item }: { item: Appointment }) => {
     const now = new Date().getTime();
     const isUpcoming = new Date(item.requestedStart).getTime() > now;
-    const canCancel = (item.status === 'pending' || item.status === 'confirmed') && isUpcoming;
+    const canCancel = (item.status === 'Pending' || item.status === 'Accepted') && isUpcoming;
 
     return (
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
@@ -220,10 +220,25 @@ export default function AppointmentsScreen() {
           </View>
 
           <View style={[styles.infoRow, { flexDirection: isArabic ? 'row' : 'row-reverse' }]}>
-            <Text style={[styles.infoText, { color: theme.textPrimary }]}>{t.duration}: {item.durationMinutes} {t.min}</Text>
+            <Text style={[styles.infoText, { color: theme.textPrimary }]}>{t.endTime}: {formatAppointmentDate(item.requestedEnd)}</Text>
             <Ionicons name="time-outline" size={16} color={theme.textSecondary} style={isArabic ? { marginLeft: 8 } : { marginRight: 8 }} />
           </View>
         </View>
+
+        {/* Rejection reason — shown when the appointment is rejected */}
+        {item.status === 'Rejected' && item.rejectionReason && (
+          <View style={[styles.cancelReasonBox, { flexDirection: isArabic ? 'row' : 'row-reverse' }]}>
+            <Ionicons name="information-circle-outline" size={18} color="#FF5252" style={isArabic ? { marginLeft: 8 } : { marginRight: 8 }} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.cancelReasonTitle, { textAlign: isArabic ? 'right' : 'left' }]}>
+                {t.rejectionReason}
+              </Text>
+              <Text style={[styles.cancelReasonText, { textAlign: isArabic ? 'right' : 'left' }]}>
+                {item.rejectionReason}
+              </Text>
+            </View>
+          </View>
+        )}
 
         {canCancel && (
           <TouchableOpacity 
@@ -383,6 +398,26 @@ const styles = StyleSheet.create({
   infoText: {
     color: '#E0E0E0',
     fontSize: 13,
+  },
+  cancelReasonBox: {
+    backgroundColor: 'rgba(255, 82, 82, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 82, 82, 0.25)',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+    alignItems: 'flex-start',
+  },
+  cancelReasonTitle: {
+    color: '#FF5252',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  cancelReasonText: {
+    color: '#FF8A80',
+    fontSize: 12,
+    lineHeight: 18,
   },
   cancelButton: {
     flexDirection: 'row',
