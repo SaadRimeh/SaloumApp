@@ -10,7 +10,7 @@ import {
   Alert
 } from 'react-native';
 import { useAuth } from '@clerk/expo';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api, Appointment, Order } from '../../utils/api';
 import { useAppContext } from '../../utils/ThemeContext';
@@ -18,6 +18,7 @@ import { useAppContext } from '../../utils/ThemeContext';
 export default function AppointmentsScreen() {
   const { getToken } = useAuth();
   const router = useRouter();
+  const { tab } = useLocalSearchParams<{ tab?: string }>();
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -103,6 +104,15 @@ export default function AppointmentsScreen() {
   useEffect(() => {
     loadData();
   }, []);
+
+  useEffect(() => {
+    if (tab === 'orders') {
+      setMainTab('orders');
+      setActiveTab('upcoming');
+    } else if (tab === 'appointments') {
+      setMainTab('appointments');
+    }
+  }, [tab]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -538,6 +548,7 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     paddingHorizontal: 16,
+    paddingTop: 16,
     paddingBottom: 24,
   },
   card: {

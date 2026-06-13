@@ -110,7 +110,10 @@ export default function ProductDetailsScreen() {
           text: t.ok,
           onPress: () => {
             setReserveModalVisible(false);
-            router.replace("/(tabs)/profile");
+            router.replace({
+              pathname: "/(tabs)/appointments",
+              params: { tab: "orders" }
+            });
           },
         },
       ]);
