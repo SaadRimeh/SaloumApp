@@ -12,7 +12,7 @@ import {
 import { useAuth } from '@clerk/expo';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { api, Appointment } from '../../utils/api';
+import { api, Appointment, Order } from '../../utils/api';
 import { useAppContext } from '../../utils/ThemeContext';
 
 export default function AppointmentsScreen() {
@@ -20,13 +20,15 @@ export default function AppointmentsScreen() {
   const router = useRouter();
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [mainTab, setMainTab] = useState<'appointments' | 'orders'>('appointments');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const { theme, isArabic } = useAppContext();
 
   const t = {
-    error: isArabic ? 'فشل تحميل قائمة الحجوزات. يرجى المحاولة لاحقاً' : 'Failed to load appointments. Please try again',
+    error: isArabic ? 'فشل تحميل البيانات. يرجى المحاولة لاحقاً' : 'Failed to load data. Please try again',
     cancelConfirmTitle: isArabic ? 'تأكيد الإلغاء' : 'Confirm Cancellation',
     cancelConfirmMsg: isArabic ? 'هل أنت متأكد من رغبتك في إلغاء هذا الحجز؟ لا يمكن التراجع عن هذا الإجراء.' : 'Are you sure you want to cancel this appointment? This action cannot be undone.',
     cancelBack: isArabic ? 'تراجع' : 'Back',
@@ -61,7 +63,7 @@ export default function AppointmentsScreen() {
     am: isArabic ? 'صباحاً' : 'AM', pm: isArabic ? 'مساءً' : 'PM',
   };
 
-  const loadAppointments = async () => {
+  const loadData = async () => {
     try {
       const token = await getToken();
       if (!token) {
@@ -69,14 +71,28 @@ export default function AppointmentsScreen() {
         setRefreshing(false);
         return;
       }
-      const data = await api.getMyAppointments(token);
-      // Sort appointments by date: upcoming first, past last
-      const sorted = [...data].sort((a, b) => 
+      const [apptsData, ordersData] = await Promise.all([
+        api.getMyAppointments(token).catch(err => {
+          console.warn('Failed to load appointments:', err);
+          return [];
+        }),
+        api.getOrders(token).catch(err => {
+          console.warn('Failed to load orders:', err);
+          return [];
+        })
+      ]);
+
+      const sortedAppts = [...apptsData].sort((a, b) => 
         new Date(b.requestedStart).getTime() - new Date(a.requestedStart).getTime()
       );
-      setAppointments(sorted);
+      setAppointments(sortedAppts);
+
+      const sortedOrders = [...ordersData].sort((a, b) => 
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setOrders(sortedOrders);
     } catch (err: any) {
-      console.warn('Load appointments error:', err);
+      console.warn('Load data error:', err);
       Alert.alert('Error', t.error);
     } finally {
       setLoading(false);
@@ -85,12 +101,12 @@ export default function AppointmentsScreen() {
   };
 
   useEffect(() => {
-    loadAppointments();
+    loadData();
   }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
-    loadAppointments();
+    loadData();
   };
 
   // Helper to format date in beautiful Arabic
@@ -137,7 +153,7 @@ export default function AppointmentsScreen() {
               if (token) {
                 await api.cancelAppointment(token, id);
                 Alert.alert(t.cancelSuccessTitle, t.cancelSuccessMsg);
-                loadAppointments();
+                loadData();
               }
             } catch (err: any) {
               console.warn('Cancel appointment error:', err);
@@ -161,6 +177,16 @@ export default function AppointmentsScreen() {
         return isUpcomingTime && isActiveStatus;
       } else {
         return !isUpcomingTime || apt.status === 'Cancelled' || apt.status === 'Rejected';
+      }
+    });
+  };
+
+  const getFilteredOrders = () => {
+    return orders.filter(order => {
+      if (activeTab === 'upcoming') {
+        return order.status === 'Reserved';
+      } else {
+        return order.status === 'Delivered' || order.status === 'Cancelled';
       }
     });
   };
@@ -196,7 +222,43 @@ export default function AppointmentsScreen() {
     );
   };
 
-  const filteredData = getFilteredAppointments();
+  const getOrderStatusBadge = (status: string) => {
+    let text = isArabic ? 'محجوز للتحصيل' : 'Reserved';
+    let bgColor = 'rgba(255, 193, 7, 0.15)';
+    let textColor = '#FFC107';
+    let iconName: any = 'time-outline';
+
+    if (status === 'Delivered') {
+      text = isArabic ? 'تم التسليم' : 'Delivered';
+      bgColor = 'rgba(76, 175, 80, 0.15)';
+      textColor = '#4CAF50';
+      iconName = 'checkmark-circle-outline';
+    } else if (status === 'Cancelled') {
+      text = isArabic ? 'ملغي' : 'Cancelled';
+      bgColor = 'rgba(244, 67, 54, 0.15)';
+      textColor = '#F44336';
+      iconName = 'close-circle-outline';
+    }
+
+    return (
+      <View style={[styles.statusBadge, { backgroundColor: bgColor, flexDirection: isArabic ? 'row' : 'row-reverse' }]}>
+        <Text style={[styles.statusText, { color: textColor }]}>{text}</Text>
+        <Ionicons name={iconName} size={14} color={textColor} style={isArabic ? { marginLeft: 4 } : { marginRight: 4 }} />
+      </View>
+    );
+  };
+
+  const formatOrderDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const dayNum = date.getDate();
+    const months = [
+      t.jan, t.feb, t.mar, t.apr, t.may, t.jun, 
+      t.jul, t.aug, t.sep, t.oct, t.nov, t.dec
+    ];
+    const monthName = months[date.getMonth()];
+    const year = date.getFullYear();
+    return `${dayNum} ${monthName} ${year}`;
+  };
 
   const renderAppointmentItem = ({ item }: { item: Appointment }) => {
     const now = new Date().getTime();
@@ -253,22 +315,102 @@ export default function AppointmentsScreen() {
     );
   };
 
+  const renderOrderItem = ({ item }: { item: Order }) => {
+    const product = typeof item.product === 'object' ? item.product : null;
+    const productName = product ? product.name : (isArabic ? 'منتج' : 'Product');
+    const price = product ? product.price : 0;
+    const total = price * item.reservedQuantity;
+
+    return (
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <View style={[styles.cardHeader, { borderBottomColor: theme.border, flexDirection: isArabic ? 'row' : 'row-reverse' }]}>
+          {getOrderStatusBadge(item.status)}
+          <View style={[styles.cardHeaderLeft, { flexDirection: isArabic ? 'row' : 'row-reverse' }]}>
+            <Ionicons name="flask-outline" size={18} color="#C5A880" />
+            <Text style={[styles.serviceTitle, { color: theme.textPrimary }, isArabic ? { marginRight: 6 } : { marginLeft: 6 }]}>
+              {productName}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.cardBody}>
+          <View style={[styles.infoRow, { justifyContent: 'space-between', flexDirection: isArabic ? 'row-reverse' : 'row', marginBottom: 8 }]}>
+            <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>
+              {isArabic ? 'الكمية والسعر:' : 'Qty & Price:'}
+            </Text>
+            <Text style={[styles.infoText, { color: theme.textPrimary }]}>
+              {item.reservedQuantity} × {price} $
+            </Text>
+          </View>
+
+          <View style={[styles.infoRow, { justifyContent: 'space-between', flexDirection: isArabic ? 'row-reverse' : 'row', marginBottom: 8 }]}>
+            <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>
+              {isArabic ? 'السعر الإجمالي:' : 'Total Price:'}
+            </Text>
+            <Text style={[styles.infoText, { color: '#C5A880', fontWeight: 'bold' }]}>
+              {total.toFixed(2)} $
+            </Text>
+          </View>
+
+          <View style={[styles.infoRow, { justifyContent: 'space-between', flexDirection: isArabic ? 'row-reverse' : 'row', marginBottom: 4 }]}>
+            <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>
+              {isArabic ? 'تاريخ الحجز:' : 'Reservation Date:'}
+            </Text>
+            <Text style={[styles.infoText, { color: theme.textPrimary }]}>
+              {formatOrderDate(item.createdAt)}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const filteredData = mainTab === 'appointments' ? getFilteredAppointments() : getFilteredOrders();
+
+  const subTabLabel1 = mainTab === 'appointments' 
+    ? t.tabPast 
+    : (isArabic ? 'المستلمة والملغاة' : 'Delivered & Cancelled');
+  const subTabLabel2 = mainTab === 'appointments' 
+    ? t.tabUpcoming 
+    : (isArabic ? 'الطلبات النشطة' : 'Active Orders');
+
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
-      {/* Tabs Toggles */}
-      <View style={[styles.tabContainer, { backgroundColor: theme.card, borderColor: theme.border, flexDirection: isArabic ? 'row' : 'row-reverse' }]}>
+      {/* Main Tab Switcher: Appointments vs Orders */}
+      <View style={[styles.mainTabContainer, { backgroundColor: theme.card, borderColor: theme.border, flexDirection: isArabic ? 'row' : 'row-reverse' }]}>
+        <TouchableOpacity 
+          style={[styles.mainTab, mainTab === 'appointments' && styles.activeMainTab]}
+          onPress={() => setMainTab('appointments')}
+        >
+          <Text style={[styles.mainTabText, mainTab === 'appointments' && styles.activeMainTabText]}>
+            {isArabic ? 'حجوزات الحلاقة' : 'Barber Bookings'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={[styles.mainTab, mainTab === 'orders' && styles.activeMainTab]}
+          onPress={() => setMainTab('orders')}
+        >
+          <Text style={[styles.mainTabText, mainTab === 'orders' && styles.activeMainTabText]}>
+            {isArabic ? 'طلبات المنتجات' : 'Product Orders'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Sub Tabs Toggles */}
+      <View style={[styles.tabContainer, { backgroundColor: theme.card, borderColor: theme.border, flexDirection: isArabic ? 'row' : 'row-reverse', marginTop: 12 }]}>
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'past' && styles.activeTab]}
           onPress={() => setActiveTab('past')}
         >
-          <Text style={[styles.tabText, activeTab === 'past' && styles.activeTabText]}>{t.tabPast}</Text>
+          <Text style={[styles.tabText, activeTab === 'past' && styles.activeTabText]}>{subTabLabel1}</Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'upcoming' && styles.activeTab]}
           onPress={() => setActiveTab('upcoming')}
         >
-          <Text style={[styles.tabText, activeTab === 'upcoming' && styles.activeTabText]}>{t.tabUpcoming}</Text>
+          <Text style={[styles.tabText, activeTab === 'upcoming' && styles.activeTabText]}>{subTabLabel2}</Text>
         </TouchableOpacity>
       </View>
 
@@ -279,27 +421,50 @@ export default function AppointmentsScreen() {
         </View>
       ) : filteredData.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="calendar-clear-outline" size={60} color={theme.textSecondary} style={{ marginBottom: 16 }} />
-          <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>{t.noApps}</Text>
+          <Ionicons 
+            name={mainTab === 'appointments' ? "calendar-clear-outline" : "basket-outline"} 
+            size={60} 
+            color={theme.textSecondary} 
+            style={{ marginBottom: 16 }} 
+          />
+          <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>
+            {mainTab === 'appointments' ? t.noApps : (isArabic ? 'لا توجد طلبات' : 'No orders')}
+          </Text>
           <Text style={[styles.emptySubtitle, { color: theme.textSecondary }]}>
-            {activeTab === 'upcoming' 
-              ? t.noAppsUpcoming
-              : t.noAppsPast}
+            {mainTab === 'appointments' 
+              ? (activeTab === 'upcoming' ? t.noAppsUpcoming : t.noAppsPast)
+              : (activeTab === 'upcoming' 
+                  ? (isArabic ? 'ليس لديك أي طلبات منتجات نشطة.' : 'You have no active orders.') 
+                  : (isArabic ? 'سجل طلباتك يظهر هنا.' : 'Your order history appears here.')
+                )
+            }
           </Text>
           
           {activeTab === 'upcoming' && (
             <TouchableOpacity 
               style={styles.bookNowBtn}
-              onPress={() => router.push('/book')}
+              onPress={() => router.push(mainTab === 'appointments' ? '/book' : '/products')}
             >
-              <Text style={styles.bookNowBtnText}>{t.bookNow}</Text>
+              <Text style={styles.bookNowBtnText}>
+                {mainTab === 'appointments' ? t.bookNow : (isArabic ? 'تصفح المتجر' : 'Browse Shop')}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
+      ) : mainTab === 'appointments' ? (
+        <FlatList
+          data={filteredData as Appointment[]}
+          renderItem={renderAppointmentItem}
+          keyExtractor={(item) => item._id}
+          contentContainerStyle={styles.listContainer}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#C5A880" />
+          }
+        />
       ) : (
         <FlatList
-          data={filteredData}
-          renderItem={renderAppointmentItem}
+          data={filteredData as Order[]}
+          renderItem={renderOrderItem}
           keyExtractor={(item) => item._id}
           contentContainerStyle={styles.listContainer}
           refreshControl={
@@ -315,11 +480,38 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  tabContainer: {
-    margin: 16,
+  mainTabContainer: {
+    marginHorizontal: 16,
+    marginTop: 16,
     borderRadius: 12,
     padding: 4,
     borderWidth: 1,
+  },
+  mainTab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: 8,
+  },
+  activeMainTab: {
+    backgroundColor: '#C5A880',
+  },
+  mainTabText: {
+    color: '#888888',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  activeMainTabText: {
+    color: '#121212',
+  },
+  tabContainer: {
+    marginHorizontal: 16,
+    borderRadius: 12,
+    padding: 4,
+    borderWidth: 1,
+  },
+  infoLabel: {
+    fontSize: 13,
   },
   tab: {
     flex: 1,
